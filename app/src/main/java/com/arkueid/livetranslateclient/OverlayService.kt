@@ -12,6 +12,7 @@ import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.TextView
 import android.widget.Toast
@@ -49,13 +50,19 @@ class OverlayService : Service(), SubtitleBus.Listener {
 
     private var lastMessage: MessageAdapter.Message? = null
     private var streamUpdatePending = false
+    private var maxHeight = 0
+    private var manualHeight = false
+    private var followBottom = true
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private val streamUpdate = Runnable {
         streamUpdatePending = false
         val message = lastMessage ?: return@Runnable
         val index = adapter.indexOf(message)
-        if (index >= 0) adapter.notifyItemChanged(index)
+        if (index >= 0) {
+            adapter.notifyItemChanged(index)
+            refreshLayout()
+        }
     }
 
     override fun onCreate() {
@@ -89,6 +96,12 @@ class OverlayService : Service(), SubtitleBus.Listener {
         width = width.coerceAtMost(metrics.widthPixels)
         var height = prefs.getInt(Prefs.KEY_OVERLAY_H, defaultHeight).coerceAtLeast(dp(120))
         height = height.coerceAtMost(metrics.heightPixels - dp(60))
+        // Saved height is the maximum: the window hugs its content so the empty
+        // part of the panel does not cover the video underneath, unless the user
+        // dragged the resize grip and pinned a fixed height.
+        maxHeight = height
+        manualHeight = prefs.getBoolean(Prefs.KEY_OVERLAY_MANUAL, false)
+        val initialHeight = if (manualHeight) height else min(height, dp(64))
 
         var x = prefs.getInt(Prefs.KEY_OVERLAY_X, metrics.widthPixels - width - dp(8))
         var y = prefs.getInt(Prefs.KEY_OVERLAY_Y, max(dp(80), metrics.heightPixels / 3))
@@ -97,7 +110,7 @@ class OverlayService : Service(), SubtitleBus.Listener {
 
         layoutParams = WindowManager.LayoutParams(
             width,
-            height,
+            initialHeight,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                 or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
@@ -118,6 +131,13 @@ class OverlayService : Service(), SubtitleBus.Listener {
         recycler.layoutManager = LinearLayoutManager(this)
         recycler.adapter = adapter
         recycler.itemAnimator = null
+        recycler.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
+                // Stop chasing new sentences once the user scrolls up to read
+                // older ones; resume as soon as they are back at the bottom.
+                followBottom = !rv.canScrollVertically(1)
+            }
+        })
 
         // The whole blank part of the title bar is the drag handle.
         attachDrag(rootView.findViewById(R.id.overlay_drag_area))
@@ -126,6 +146,7 @@ class OverlayService : Service(), SubtitleBus.Listener {
         rootView.findViewById<TextView>(R.id.btn_clear).setOnClickListener {
             adapter.clear()
             lastMessage = null
+            rootView.post { fitToContent() }
         }
         rootView.findViewById<TextView>(R.id.btn_settings).setOnClickListener {
             val intent = Intent(this, MainActivity::class.java)
@@ -135,6 +156,7 @@ class OverlayService : Service(), SubtitleBus.Listener {
         stopButton.setOnClickListener { onStopClicked() }
         updateStopButton()
         refreshStatus()
+        rootView.post { fitToContent() }
     }
 
     private fun onStopClicked() {
@@ -240,7 +262,7 @@ class OverlayService : Service(), SubtitleBus.Listener {
                     }
                     MotionEvent.ACTION_MOVE -> {
                         val w = max(dp(220), startW + (event.rawX - touchX).toInt())
-                        val h = max(dp(120), startH + (event.rawY - touchY).toInt())
+                        val h = max(dp(64), startH + (event.rawY - touchY).toInt())
                         if (w != layoutParams.width || h != layoutParams.height) {
                             layoutParams.width = w
                             layoutParams.height = h
@@ -249,7 +271,15 @@ class OverlayService : Service(), SubtitleBus.Listener {
                         return true
                     }
                     MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        // A finished drag pins the height: stop auto-fitting so it
+                        // does not bounce back to the content height. A tap that
+                        // never changed the height stays in auto mode.
+                        if (layoutParams.height != startH) {
+                            manualHeight = true
+                            maxHeight = layoutParams.height.coerceAtLeast(dp(64))
+                        }
                         saveGeometry()
+                        fitToContent()
                         return true
                     }
                 }
@@ -258,12 +288,82 @@ class OverlayService : Service(), SubtitleBus.Listener {
         })
     }
 
+    /**
+     * Auto mode: shrink/grow the window to the message list, capped by [maxHeight].
+     * Manual mode (after the user dragged the grip): keep the pinned height and
+     * let the list scroll instead, so a resize gesture does not snap back.
+     */
+    private fun fitToContent() {
+        if (!::rootView.isInitialized || !::recycler.isInitialized) return
+        val screenHeight = resources.displayMetrics.heightPixels
+        val cap = maxHeight.coerceAtMost(screenHeight - dp(60))
+
+        if (manualHeight) {
+            applyHeight(cap.coerceAtLeast(dp(60)), screenHeight)
+            return
+        }
+
+        val header = rootView.findViewById<View>(R.id.overlay_header).height
+        val footer = rootView.findViewById<View>(R.id.overlay_footer).height
+        if (header == 0 || footer == 0) return
+
+        var listContent = 0
+        if (adapter.itemCount > 0) {
+            val lp = recycler.layoutParams
+            val oldHeight = lp.height
+            lp.height = ViewGroup.LayoutParams.WRAP_CONTENT
+            val width = if (recycler.width > 0) {
+                recycler.width
+            } else {
+                rootView.width - rootView.paddingLeft - rootView.paddingRight
+            }
+            if (width <= 0) {
+                lp.height = oldHeight
+                return
+            }
+            recycler.measure(
+                View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+            )
+            listContent = recycler.measuredHeight
+            lp.height = oldHeight
+        }
+
+        val content = rootView.paddingTop + rootView.paddingBottom +
+            header + footer + listContent
+        applyHeight(content.coerceIn(dp(60), cap), screenHeight)
+    }
+
+    /**
+     * After a message is added or grows (a long sentence wraps to a second
+     * line), keep the newest line visible. The scroll request is left pending
+     * on purpose: it is applied by the next layout pass, after the new item has
+     * been measured. A post() runs before that pass and would scroll by the old
+     * content height, leaving the list short of the bottom.
+     */
+    private fun refreshLayout() {
+        if (followBottom && adapter.itemCount > 0) {
+            recycler.scrollToPosition(adapter.itemCount - 1)
+        }
+        rootView.post { fitToContent() }
+    }
+
+    private fun applyHeight(target: Int, screenHeight: Int) {
+        if (target == layoutParams.height) return
+        layoutParams.height = target
+        if (layoutParams.y + target > screenHeight - dp(8)) {
+            layoutParams.y = (screenHeight - dp(8) - target).coerceAtLeast(0)
+        }
+        windowManager.updateViewLayout(rootView, layoutParams)
+    }
+
     private fun saveGeometry() {
         Prefs.get(this).edit()
             .putInt(Prefs.KEY_OVERLAY_X, layoutParams.x)
             .putInt(Prefs.KEY_OVERLAY_Y, layoutParams.y)
             .putInt(Prefs.KEY_OVERLAY_W, layoutParams.width)
-            .putInt(Prefs.KEY_OVERLAY_H, layoutParams.height)
+            .putInt(Prefs.KEY_OVERLAY_H, maxHeight)
+            .putBoolean(Prefs.KEY_OVERLAY_MANUAL, manualHeight)
             .apply()
     }
 
@@ -280,7 +380,7 @@ class OverlayService : Service(), SubtitleBus.Listener {
                     asrMs = event.optDouble("asr_ms", 0.0)
                 )
                 lastMessage = adapter.add(message)
-                recycler.scrollToPosition(adapter.itemCount - 1)
+                refreshLayout()
             }
             "translation_delta" -> {
                 val message = lastMessage ?: return
@@ -297,7 +397,10 @@ class OverlayService : Service(), SubtitleBus.Listener {
                 message.tlMs = event.optDouble("tl_ms", 0.0)
                 message.streaming = false
                 val index = adapter.indexOf(message)
-                if (index >= 0) adapter.notifyItemChanged(index)
+                if (index >= 0) {
+                    adapter.notifyItemChanged(index)
+                    refreshLayout()
+                }
             }
             "error" -> {
                 val text = getString(R.string.overlay_error, event.optString("message"))
@@ -311,7 +414,7 @@ class OverlayService : Service(), SubtitleBus.Listener {
                     isError = true
                 )
                 adapter.add(message)
-                recycler.scrollToPosition(adapter.itemCount - 1)
+                refreshLayout()
             }
         }
     }

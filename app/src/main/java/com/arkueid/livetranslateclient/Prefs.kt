@@ -15,6 +15,7 @@ object Prefs {
     const val KEY_OVERLAY_Y = "overlay_y"
     const val KEY_OVERLAY_W = "overlay_w"
     const val KEY_OVERLAY_H = "overlay_h"
+    const val KEY_OVERLAY_MANUAL = "overlay_manual"
 
     fun get(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
