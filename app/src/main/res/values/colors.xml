@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="purple_200">#FFBB86FC</color>
+    <color name="purple_500">#FF6200EE</color>
+    <color name="purple_700">#FF3700B3</color>
+    <color name="teal_200">#FF03DAC5</color>
+    <color name="teal_700">#FF018786</color>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+
+    <!-- Overlay palette, mirrored from the PC client's DEFAULT_STYLE -->
+    <color name="panel_bg">#D90F0F19</color>
+    <color name="header_bg">#C83C3C50</color>
+    <color name="btn_bg">#33FFFFFF</color>
+    <color name="btn_stroke">#44FFFFFF</color>
+    <color name="btn_bg_pressed">#55FFFFFF</color>
+    <color name="field_bg">#22FFFFFF</color>
+    <color name="field_stroke">#44FFFFFF</color>
+    <color name="text_title">#AAAAAA</color>
+    <color name="text_original">#CCCCCC</color>
+    <color name="text_translation">#FFFFFF</color>
+    <color name="text_timestamp">#888899</color>
+    <color name="text_lang">#66CCFF</color>
+    <color name="text_asr">#88BB88</color>
+    <color name="text_tl">#DDBB88</color>
+    <color name="text_dim">#999999</color>
+    <color name="text_error">#FF8866</color>
+    <color name="status_ok">#66DD88</color>
+    <color name="status_off">#888899</color>
+    <color name="window_bg">#F0121218</color>
+</resources>
