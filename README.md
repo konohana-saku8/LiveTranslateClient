@@ -61,9 +61,10 @@
 
 ## 构建
 
+构建需要 JDK 25（Android Studio 自带的 JBR 即可，把 `JAVA_HOME` 指向它）：
+
 ```powershell
 cd LiveTranslateClient
-$env:JAVA_HOME='D:\Software\Android Studio\jbr'   # 需要 JDK 25
 .\gradlew.bat :app:assembleDebug
 adb install -r app\build\outputs\apk\debug\app-debug.apk
 ```
@@ -102,7 +103,7 @@ adb install -r app\build\outputs\apk\debug\app-debug.apk
 
 **连接一直转圈或提示连接断开**
 
-- 确认手机与电脑处于同一网段（例如都是 `192.168.10.x`）。
+- 确认手机与电脑处于同一网段，且能互相访问。
 - 电脑端「远程服务」是否已启动，端口是否一致，令牌是否一致。
 - Android 17 必须授予「本地网络」权限（首次点击「连接」时申请）；被拒绝后可在系统设置中手动开启。
 - 设置页是否显示「已连接」；「开始」在未连接时会提示先连接。
