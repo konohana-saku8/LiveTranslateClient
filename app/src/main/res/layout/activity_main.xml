@@ -28,10 +28,21 @@
             android:textColor="@color/text_dim"
             android:textSize="13sp" />
 
+        <CheckBox
+            android:id="@+id/check_auto"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:buttonTint="@color/text_translation"
+            android:checked="true"
+            android:text="@string/label_auto"
+            android:textColor="@color/text_original"
+            android:textSize="14sp" />
+
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="14dp"
             android:text="@string/label_host"
             android:textColor="@color/text_original"
             android:textSize="13sp" />

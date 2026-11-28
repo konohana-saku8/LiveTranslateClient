@@ -9,8 +9,10 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.util.Log
 import android.view.View
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
@@ -31,10 +33,21 @@ class MainActivity : AppCompatActivity(), SubtitleBus.Listener {
     private lateinit var hostEdit: EditText
     private lateinit var portEdit: EditText
     private lateinit var tokenEdit: EditText
+    private lateinit var autoCheck: CheckBox
     private lateinit var statusView: TextView
     private lateinit var connectButton: Button
 
     private var pendingAction = ACTION_NONE
+    private var pendingInput: ConnectionInput? = null
+    private var pendingAuto = false
+
+    private var discovering = false
+    private var discoveryThread: Thread? = null
+
+    @Volatile
+    private var discoveryCancelled = false
+
+    private data class ConnectionInput(val host: String, val port: Int)
 
     private val permissionsLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -48,7 +61,7 @@ class MainActivity : AppCompatActivity(), SubtitleBus.Listener {
                 toast(getString(R.string.toast_local_network_denied))
             action == ACTION_START && !audioGranted ->
                 toast(getString(R.string.toast_permission_denied))
-            action == ACTION_CONNECT -> doConnect()
+            action == ACTION_CONNECT -> pendingInput?.let { proceedConnect(it, pendingAuto) }
             action == ACTION_START -> continueStart()
         }
     }
@@ -82,6 +95,7 @@ class MainActivity : AppCompatActivity(), SubtitleBus.Listener {
         hostEdit = findViewById(R.id.edit_host)
         portEdit = findViewById(R.id.edit_port)
         tokenEdit = findViewById(R.id.edit_token)
+        autoCheck = findViewById(R.id.check_auto)
         statusView = findViewById(R.id.text_status)
         connectButton = findViewById(R.id.btn_connect)
 
@@ -89,6 +103,12 @@ class MainActivity : AppCompatActivity(), SubtitleBus.Listener {
         hostEdit.setText(prefs.getString(Prefs.KEY_HOST, ""))
         portEdit.setText(prefs.getInt(Prefs.KEY_PORT, 8766).toString())
         tokenEdit.setText(prefs.getString(Prefs.KEY_TOKEN, ""))
+        autoCheck.isChecked = prefs.getBoolean(Prefs.KEY_AUTO, true)
+        applyAutoMode(autoCheck.isChecked)
+        autoCheck.setOnCheckedChangeListener { _, checked ->
+            applyAutoMode(checked)
+            Prefs.get(this).edit().putBoolean(Prefs.KEY_AUTO, checked).apply()
+        }
 
         connectButton.setOnClickListener { onConnectClicked() }
         findViewById<Button>(R.id.btn_start).setOnClickListener { onStartClicked() }
@@ -105,29 +125,32 @@ class MainActivity : AppCompatActivity(), SubtitleBus.Listener {
         super.onPause()
     }
 
-    /** Validates the URL fields and stores them; returns true when usable. */
-    private fun saveConnectionInput(): Boolean {
+    private fun applyAutoMode(auto: Boolean) {
+        hostEdit.isEnabled = !auto
+        portEdit.isEnabled = !auto
+        val alpha = if (auto) 0.5f else 1f
+        hostEdit.alpha = alpha
+        portEdit.alpha = alpha
+    }
+
+    /** Reads the fields; an empty host is fine in auto-discovery mode. */
+    private fun readConnectionInput(auto: Boolean): ConnectionInput? {
         // Tolerate pasted input like "ws://192.168.1.10:8766/ws/subtitle".
         val host = hostEdit.text.toString().trim()
             .removePrefix("ws://")
             .removePrefix("http://")
             .substringBefore('/')
             .substringBefore(':')
-        if (host.isEmpty()) {
+        if (!auto && host.isEmpty()) {
             toast(getString(R.string.toast_need_host))
-            return false
+            return null
         }
         val port = portEdit.text.toString().toIntOrNull() ?: 8766
         if (port !in 1..65535) {
             toast(getString(R.string.toast_invalid_port))
-            return false
+            return null
         }
-        Prefs.get(this).edit()
-            .putString(Prefs.KEY_HOST, host)
-            .putInt(Prefs.KEY_PORT, port)
-            .putString(Prefs.KEY_TOKEN, tokenEdit.text.toString().trim())
-            .apply()
-        return true
+        return ConnectionInput(host, port)
     }
 
     private fun onConnectClicked() {
@@ -140,17 +163,91 @@ class MainActivity : AppCompatActivity(), SubtitleBus.Listener {
             refreshStatus()
             return
         }
-        if (!saveConnectionInput()) return
+        if (discovering) return
+        val auto = autoCheck.isChecked
+        val input = readConnectionInput(auto) ?: return
+        pendingInput = input
+        pendingAuto = auto
         if (requiresLocalNetworkPermission()) {
             pendingAction = ACTION_CONNECT
             permissionsLauncher.launch(arrayOf(LOCAL_NETWORK_PERMISSION))
             return
         }
+        proceedConnect(input, auto)
+    }
+
+    private fun proceedConnect(input: ConnectionInput, auto: Boolean) {
+        Prefs.get(this).edit()
+            .putString(Prefs.KEY_TOKEN, tokenEdit.text.toString().trim())
+            .apply()
+        if (auto) {
+            startDiscovery(input.port)
+            return
+        }
+        Prefs.get(this).edit()
+            .putString(Prefs.KEY_HOST, input.host)
+            .putInt(Prefs.KEY_PORT, input.port)
+            .apply()
         doConnect()
     }
 
-    private fun doConnect() {
-        ConnectionManager.connect(this)
+    private fun startDiscovery(tcpPort: Int) {
+        discovering = true
+        discoveryCancelled = false
+        setStatus(getString(R.string.status_searching), R.color.status_off)
+        connectButton.isEnabled = false
+        connectButton.setText(R.string.btn_searching)
+
+        val thread = Thread({
+            val device = try {
+                LanDiscovery.discover(tcpPort) {
+                    discoveryCancelled || isFinishing || isDestroyed
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "LAN discovery failed", t)
+                null
+            }
+            runOnUiThread { onDiscoveryFinished(device) }
+        }, "lan-discovery").apply { isDaemon = true }
+        discoveryThread = thread
+        thread.start()
+    }
+
+    private fun onDiscoveryFinished(device: LanDiscovery.Device?) {
+        discovering = false
+        discoveryThread = null
+        if (isFinishing || isDestroyed) return
+        connectButton.isEnabled = true
+
+        if (device == null) {
+            updateConnectButton(false)
+            setStatus(getString(R.string.status_idle), R.color.status_off)
+            toast(getString(R.string.toast_not_found))
+            return
+        }
+
+        // Remember the resolved address so reconnects and the manual mode use it.
+        hostEdit.setText(device.host)
+        portEdit.setText(device.port.toString())
+        Prefs.get(this).edit()
+            .putString(Prefs.KEY_HOST, device.host)
+            .putInt(Prefs.KEY_PORT, device.port)
+            .apply()
+
+        val token = Prefs.get(this).getString(Prefs.KEY_TOKEN, "").orEmpty()
+        if (device.tokenRequired && token.isEmpty()) {
+            updateConnectButton(false)
+            setStatus(getString(R.string.status_idle), R.color.status_off)
+            toast(getString(R.string.toast_token_required))
+            tokenEdit.requestFocus()
+            return
+        }
+        toast(getString(R.string.toast_found, device.host, device.port))
+        doConnect(device.host, device.port)
+    }
+
+    private fun doConnect(host: String? = null, port: Int? = null) {
+        ConnectionManager.connect(this, host, port)
         updateConnectButton(true)
         refreshStatus()
     }
@@ -215,6 +312,14 @@ class MainActivity : AppCompatActivity(), SubtitleBus.Listener {
     }
 
     private fun refreshStatus() {
+        if (!::connectButton.isInitialized) return
+        if (discovering) {
+            connectButton.isEnabled = false
+            connectButton.setText(R.string.btn_searching)
+            setStatus(getString(R.string.status_searching), R.color.status_off)
+            return
+        }
+        connectButton.isEnabled = true
         updateConnectButton(ConnectionManager.isConnected)
         when {
             SubtitleBus.capturePaused ->
@@ -256,6 +361,12 @@ class MainActivity : AppCompatActivity(), SubtitleBus.Listener {
     }
 
     override fun onConnectionChanged(connected: Boolean, detail: String?) {
+        if (!connected) {
+            when (detail?.lowercase()) {
+                "unauthorized" -> toast(getString(R.string.toast_token_wrong))
+                "busy" -> toast(getString(R.string.toast_server_busy))
+            }
+        }
         refreshStatus()
     }
 
@@ -263,7 +374,14 @@ class MainActivity : AppCompatActivity(), SubtitleBus.Listener {
         refreshStatus()
     }
 
+    override fun onDestroy() {
+        discoveryCancelled = true
+        discoveryThread?.interrupt()
+        super.onDestroy()
+    }
+
     private companion object {
+        const val TAG = "MainActivity"
         const val LOCAL_NETWORK_PERMISSION = "android.permission.ACCESS_LOCAL_NETWORK"
         const val ACTION_NONE = 0
         const val ACTION_CONNECT = 1

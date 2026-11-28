@@ -30,9 +30,13 @@ object ConnectionManager {
         targetLanguage = language
     }
 
-    fun connect(context: Context) {
+    fun connect(context: Context, host: String? = null, port: Int? = null) {
         manualStop = false
-        val url = Prefs.serverUrl(context)
+        val url = if (!host.isNullOrBlank() && port != null) {
+            Prefs.serverUrl(context, host, port)
+        } else {
+            Prefs.serverUrl(context)
+        }
         if (client != null && currentUrl == url && isConnected) return
         client?.close()
         currentUrl = url

@@ -11,6 +11,7 @@ object Prefs {
     const val KEY_HOST = "host"
     const val KEY_PORT = "port"
     const val KEY_TOKEN = "token"
+    const val KEY_AUTO = "auto_discover"
     const val KEY_OVERLAY_X = "overlay_x"
     const val KEY_OVERLAY_Y = "overlay_y"
     const val KEY_OVERLAY_W = "overlay_w"
@@ -24,7 +25,12 @@ object Prefs {
         val prefs = get(context)
         val host = prefs.getString(KEY_HOST, "") ?: ""
         val port = prefs.getInt(KEY_PORT, 8766)
-        val token = prefs.getString(KEY_TOKEN, "") ?: ""
+        return serverUrl(context, host, port)
+    }
+
+    /** URL for an address resolved by discovery instead of the saved one. */
+    fun serverUrl(context: Context, host: String, port: Int): String {
+        val token = get(context).getString(KEY_TOKEN, "") ?: ""
         val base = "ws://$host:$port/ws/subtitle"
         return if (token.isEmpty()) base else "$base?token=${Uri.encode(token)}"
     }

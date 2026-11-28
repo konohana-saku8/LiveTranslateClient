@@ -2,10 +2,11 @@
     <string name="app_name">LiveTranslate</string>
 
     <string name="main_title">LiveTranslate 手机端</string>
-    <string name="main_subtitle">把手机正在播放的声音发送到电脑，实时接收语音识别与翻译。</string>
+    <string name="main_subtitle">在局域网中自动找到电脑，把手机正在播放的声音发送过去，实时接收语音识别与翻译。</string>
 
+    <string name="label_auto">自动查找局域网中的电脑</string>
     <string name="label_host">电脑地址</string>
-    <string name="hint_host">例如 192.168.1.10</string>
+    <string name="hint_host">例如 192.168.1.10；勾选上方选项时无需填写</string>
     <string name="label_port">端口</string>
     <string name="label_token">访问令牌</string>
     <string name="hint_token">可留空；电脑端设置了令牌时再填写相同的值</string>
@@ -13,19 +14,26 @@
     <string name="btn_connect">连接</string>
     <string name="btn_disconnect">断开</string>
     <string name="btn_start">开始</string>
+    <string name="btn_searching">查找中…</string>
     <string name="toast_need_connect">请先点击「连接」连上电脑</string>
     <string name="toast_capture_running">正在采集中，请先在悬浮窗停止</string>
 
     <string name="status_idle">未连接</string>
     <string name="status_connecting">正在连接…</string>
+    <string name="status_searching">正在局域网中查找电脑…</string>
     <string name="status_connected">已连接</string>
     <string name="status_disconnected">连接断开</string>
     <string name="status_paused">已暂停采集</string>
 
-    <string name="hint_capture">• 需要 Android 10 及以上版本\n• 先点「连接」连上电脑，再点「开始」；在系统弹窗中选择要共享的应用（或整个屏幕）\n• 首次连接需授权「本地网络」，首次采集需授权「录制音频」与「显示在其他应用上层」；屏幕捕获仅用于抓取应用内播放的音频，不会录屏\n• 部分应用（如受版权保护的音乐、通话）禁止被捕获，此时将收不到声音\n• 手机与电脑需在同一局域网，并先在电脑端悬浮窗标题栏点击「启动服务」</string>
+    <string name="hint_capture">• 保持「自动查找」勾选，直接点「连接」即可自动找到同一局域网中的电脑；找不到时再取消勾选并手动填写地址\n• 需要 Android 10 及以上版本\n• 连接成功后点「开始」，在系统弹窗中选择要共享的应用（或整个屏幕）\n• 首次连接需授权「本地网络」，首次采集需授权「录制音频」与「显示在其他应用上层」；屏幕捕获仅用于抓取应用内播放的音频，不会录屏\n• 部分应用（如受版权保护的音乐、通话）禁止被捕获，此时将收不到声音\n• 手机与电脑需在同一局域网，并先在电脑端悬浮窗标题栏点击「启动服务」</string>
 
-    <string name="toast_need_host">请先填写电脑地址</string>
+    <string name="toast_need_host">请先填写电脑地址，或勾选「自动查找局域网中的电脑」</string>
     <string name="toast_invalid_port">端口需在 1-65535 之间</string>
+    <string name="toast_not_found">未找到电脑：请确认电脑端已「启动服务」，且手机与电脑在同一局域网</string>
+    <string name="toast_found">已找到电脑 %1$s:%2$d</string>
+    <string name="toast_token_required">已找到电脑，但它设置了访问令牌，请填写令牌后再连接</string>
+    <string name="toast_token_wrong">访问令牌不正确，请与电脑端「服务配置」中的令牌保持一致</string>
+    <string name="toast_server_busy">电脑端已连接另一台手机，请先在那台手机上断开</string>
     <string name="toast_need_android10">应用音频捕获需要 Android 10 及以上版本</string>
     <string name="toast_overlay_permission">请允许「显示在其他应用上层」权限后重试</string>
     <string name="toast_permission_denied">缺少必要权限，无法开始采集</string>
